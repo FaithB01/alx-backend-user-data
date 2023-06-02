@@ -1,104 +1,96 @@
 #!/usr/bin/env python3
 """
-basic_auth
+Definition of class BasicAuth
 """
-from api.v1.auth.auth import Auth
-from base64 import b64decode
-from typing import TypeVar, List
+import base64
+from .auth import Auth
+from typing import TypeVar
+
 from models.user import User
 
 
 class BasicAuth(Auth):
+    """ Implement Basic Authorization protocol methods
     """
-    inherits from auth
-    """
-
     def extract_base64_authorization_header(self,
                                             authorization_header: str) -> str:
         """
-        extracting auth header
+        Extracts the Base64 part of the Authorization header for a Basic
+        Authorization
         """
-        if (
-            authorization_header is None
-            or isinstance(authorization_header, str) is False
-            or not authorization_header.startswith("Basic ")
-            and not authorization_header.endswith(" ")
-        ):
+        if authorization_header is None:
             return None
-
-        return authorization_header.split(" ")[1]
+        if not isinstance(authorization_header, str):
+            return None
+        if not authorization_header.startswith("Basic "):
+            return None
+        token = authorization_header.split(" ")[-1]
+        return token
 
     def decode_base64_authorization_header(self,
-                                           base64_authorization_header: str
-                                           ) -> str:
+                                           base64_authorization_header:
+                                           str) -> str:
         """
-        returns the decoded value of a Base64 string
-        base64_authorization_header
+        Decode a Base64-encoded string
         """
-        if(
-            base64_authorization_header is None
-            or isinstance(base64_authorization_header, str) is False
-        ):
+        if base64_authorization_header is None:
+            return None
+        if not isinstance(base64_authorization_header, str):
             return None
         try:
-            base_encode = base64_authorization_header.encode("utf-8")
-            base_decode = b64decode(base_encode)
-            decoded = base_decode.decode('utf-8')
-            return decoded
+            decoded = base64_authorization_header.encode('utf-8')
+            decoded = base64.b64decode(decoded)
+            return decoded.decode('utf-8')
         except Exception:
             return None
 
     def extract_user_credentials(self,
-                                 decoded_base64_authorization_header: str
-                                 ) -> (str, str):
+                                 decoded_base64_authorization_header:
+                                 str) -> (str, str):
         """
-        extracting user cridentials
+        Returns user email and password from Base64 decoded value
         """
-        if (
-            decoded_base64_authorization_header is None
-            or isinstance(decoded_base64_authorization_header, str) is False
-            or ':' not in decoded_base64_authorization_header
-             ):
+        if decoded_base64_authorization_header is None:
             return (None, None)
+        if not isinstance(decoded_base64_authorization_header, str):
+            return (None, None)
+        if ':' not in decoded_base64_authorization_header:
+            return (None, None)
+        email = decoded_base64_authorization_header.split(":")[0]
+        password = decoded_base64_authorization_header[len(email) + 1:]
+        return (email, password)
 
-        creds = decoded_base64_authorization_header.split(":", 1)
-        return (creds[0], creds[1])
-
-    def user_object_from_credentials(self,
-                                     user_email: str, user_pwd: str
-                                     ) -> TypeVar('User'):
+    def user_object_from_credentials(self, user_email: str,
+                                     user_pwd: str) -> TypeVar('User'):
         """
-        extracts user object
+        Return a User instance based on email and password
         """
-        if (
-            user_email is None or not isinstance(user_email, str)
-            or user_pwd is None or not isinstance(user_pwd, str)
-             ):
+        if user_email is None or not isinstance(user_email, str):
+            return None
+        if user_pwd is None or not isinstance(user_pwd, str):
             return None
         try:
-            curr_users: List[TypeVar('User')]
-            curr_users = User.search({"email": user_email})
-
+            users = User.search({"email": user_email})
+            if not users or users == []:
+                return None
+            for u in users:
+                if u.is_valid_password(user_pwd):
+                    return u
+            return None
         except Exception:
             return None
-        for user in curr_users:
-            if user.is_valid_password(user_pwd):
-                return user
-
-        return None
 
     def current_user(self, request=None) -> TypeVar('User'):
         """
-        auth user
+        Returns a User instance based on a received request
         """
-        try:
-            header = self.authorization_header(request)
-            b64_header = self.extract_base64_authorization_header(header)
-            dec_head = self.decode_base64_authorization_header(b64_header)
-            user_creds = self.extract_user_credentials(dec_head)
-            user = self.user_object_from_credentials(user_creds[0],
-                                                     user_creds[1])
-
-            return user
-        except Exception:
-            return None
+        Auth_header = self.authorization_header(request)
+        if Auth_header is not None:
+            token = self.extract_base64_authorization_header(Auth_header)
+            if token is not None:
+                decoded = self.decode_base64_authorization_header(token)
+                if decoded is not None:
+                    email, pword = self.extract_user_credentials(decoded)
+                    if email is not None:
+                        return self.user_object_from_credentials(email, pword)
+        return
